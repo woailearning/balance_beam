@@ -1,9 +1,10 @@
 use clap::Parser;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration, io::{Error, ErrorKind}};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{Mutex, RwLock},
     time::sleep,
+    io::{AsyncReadExt, AsyncWriteExt},
 };
 
 // #[derive(Parser, Debug)]
@@ -134,6 +135,18 @@ async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     let rate_limiting_counter = state.rate_limiting_counter.clone().lock_owned().await;
     let cnt = rate_limiting_counter.entry(client_ip).or_insert(0);
+
+    if *cnt > state.max_requests_per_minutes {
+        let response = response::make_http_error(http::StatusCode::TOO_MANY_REQUESTS);
+
+        // send_response(&mut client_con, &response).await;
+
+        if let Err(error) = response::write_to_stream(&response, client_conn).await {
+            log::warn!("Failed to send response to client: {}", error);
+        }
+        return Err(Error::new(ErrorKind::Other, "Rate limiting"));
+    }
+    Ok(())
 }
 
 #[tokio::main]
