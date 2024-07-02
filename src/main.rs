@@ -167,6 +167,10 @@ async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) 
     }
 }
 
+async fn connect_to_upstream() {
+
+}
+
 async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     log::info!("Connection received from {}", client_ip);
@@ -175,6 +179,7 @@ async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
     let mut upstream_conn = match connect_to_upstream(state).await {
         Ok(stream) => stream,
         Err(_error) => {
+            // handle dead upstream_address
             log::debug!("Client finished sending requests. Shutting down connection");
             return;
         }
