@@ -162,8 +162,25 @@ async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) 
     loop {
         sleep(Duration::from_secs(clear_interval)).await;
         // Clean up counter evert minute
-        let mut rate_limiting_counter = state.rate_limiting_counter.clone();
+        let mut rate_limiting_counter = state.rate_limiting_counter.clone().lock_owned().await;
         rate_limiting_counter.clear();
+    }
+}
+
+async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
+    let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
+    log::info!("Connection received from {}", client_ip);
+
+    // Open a connection to a random destination server
+    let mut upstream_conn = match connect_to_upstream(state).await {
+        Ok(stream) => stream,
+        Err(_error) => {
+            log::debug!("Client finished sending requests. Shutting down connection");
+            return;
+        }
+    }
+    loop{
+
     }
 }
 
@@ -206,7 +223,7 @@ async fn main() {
 
     // start active health check
     let state_temp = state.clone();
-    tokio::spawn(async move { 
+    tokio::spawn( async move { 
         tokio::spawn( async move {
             active_health_check(&state).await
         })
@@ -214,6 +231,10 @@ async fn main() {
 
     // Start cleaning up rate limiting counter every minute
     let state_temp = state.clone();
-    tokio::spawn( async move{
-    })
+    tokio::spawn( async move {
+        rate_limiting_counter_clearer(&state, 60).await;
+    });
+
+    // Handle incoming connections
+
 }
