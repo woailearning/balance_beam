@@ -132,10 +132,14 @@ async fn active_health_check(state: &ProxyState) {
 }
 
 /// # Brief
+/// This asynchronous function checks if the rate limit for a client IP has been exceded.
+/// If he client exceded the maximum allowed requests per minute, an HTTP error response
+/// is sent back to the client and an error is retuned. Otherwise, the function returns Ok(()).
 /// 
 /// # Param
 /// 
 /// # Return
+/// 
 async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(), std::io::Error> {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     let rate_limiting_counter = state.rate_limiting_counter.clone().lock_owned().await;
