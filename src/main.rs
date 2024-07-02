@@ -131,7 +131,12 @@ async fn active_health_check(state: &ProxyState) {
     }
 }
 
-async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(), std::io::Error>{
+/// # Brief
+/// 
+/// # Param
+/// 
+/// # Return
+async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(), std::io::Error> {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     let rate_limiting_counter = state.rate_limiting_counter.clone().lock_owned().await;
     let cnt = rate_limiting_counter.entry(client_ip).or_insert(0);
@@ -147,6 +152,15 @@ async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(
         return Err(Error::new(ErrorKind::Other, "Rate limiting"));
     }
     Ok(())
+}
+
+async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) {
+    loop {
+        sleep(Duration::from_secs(clear_interval)).await;
+        // Clean up counter evert minute
+        let mut rate_limiting_counter = state.rate_limiting_counter.clone();
+        rate_limiting_counter.clear();
+    }
 }
 
 #[tokio::main]
@@ -187,7 +201,15 @@ async fn main() {
     };
 
     // start active health check
-
     let state_temp = state.clone();
-    tokio::spawn(async move {  });
+    tokio::spawn(async move { 
+        tokio::spawn( async move {
+            active_health_check(&state).await
+        })
+     });
+
+    // Start cleaning up rate limiting counter every minute
+    let state_temp = state.clone();
+    tokio::spawn( async move{
+    })
 }
