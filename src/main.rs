@@ -7,6 +7,9 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
+mod response;
+mod request;
+
 // #[derive(Parser, Debug)]
 // #[command(about = "Fun with load balancing")]
 
@@ -137,8 +140,13 @@ async fn active_health_check(state: &ProxyState) {
 /// is sent back to the client and an error is retuned. Otherwise, the function returns Ok(()).
 /// 
 /// # Param
+/// - `state`: A reference to the 'ProxyState' which contains the rate limiting counter and 
+/// the maxium allowed request per minutes.
+/// - `client_conn`: A mutable reference to the'TcpStream' representing the client connection.
 /// 
 /// # Return
+/// - `Result<(), std::io::Error>`: Return `Ok(())`, if the client is within the allowed rate,
+/// otherwises returns an error indicating that rate limiting has been enforced.     
 /// 
 async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(), std::io::Error> {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
@@ -158,12 +166,77 @@ async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(
     Ok(())
 }
 
+/// # Brief
+/// This asynchronous function continuously clears the rate limiting counter at a specified
+/// interval. It runs an infinite loop that sleeps for the given interval and then clears 
+/// the rate limiting counter.
+///
+/// # Param
+/// - `state`: A reference to the `ProxyState` which contains the rates limiting counter.
+/// - `clear_interval`: The interval in seconds at which the rate limiting counter should be cleared.
+/// 
 async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) {
     loop {
         sleep(Duration::from_secs(clear_interval)).await;
         // Clean up counter evert minute
-        let mut rate_limiting_counter = state.rate_limiting_counter.clone();
+        let mut rate_limiting_counter = state.rate_limiting_counter.clone().lock_owned().await;
         rate_limiting_counter.clear();
+    }
+}
+
+/// # Brief
+///
+/// # Param
+///
+/// # Return
+/// 
+async fn connect_to_upstream() -> Result<> {
+
+}
+
+
+/// # Brief
+///
+/// # Param
+///
+/// # Return
+/// 
+async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
+    let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
+    log::info!("Connection received from {}", client_ip);
+
+    // Open a connection to a random destination server
+    let mut upstream_conn = match connect_to_upstream(state).await {
+        Ok(stream) => stream,
+        Err(_error) => {
+            // handle dead upstream_address
+            log::debug!("Client finished sending requests. Shutting down connection");
+            return;
+        }
+    };
+
+    let upstream_ip = upstream_conn.peer_addr().unwrap().ip().to_string();
+
+    // The client may now send us one or more reuqests. 
+    // Keep trying to read requests until the
+    // client hangs up or we get an error.
+    loop{
+       // Read a request from a client
+       let mut reuqest = match request::read_from_stream(&mut client_conn).await {
+            Ok(request) => request,
+
+            // Handle case where client closed connection and is no longer sending requests
+            Err(request::Error::IncompleteRequest(0)) => {
+                log::info!("Client finished sending requests. Shutting down connection");
+                return;
+            },
+
+            // Handle I/O error in reading from client.
+            Err(request::Error::ConnectionError(io_err)) => {
+                log::info!("Error reading request from client stream {}", io_err);
+                return;
+            },
+       }
     }
 }
 
@@ -206,7 +279,7 @@ async fn main() {
 
     // start active health check
     let state_temp = state.clone();
-    tokio::spawn(async move { 
+    tokio::spawn( async move { 
         tokio::spawn( async move {
             active_health_check(&state).await
         })
@@ -214,6 +287,9 @@ async fn main() {
 
     // Start cleaning up rate limiting counter every minute
     let state_temp = state.clone();
-    tokio::spawn( async move{
-    })
+    tokio::spawn( async move {
+        rate_limiting_counter_clearer(&state, 60).await;
+    });
+
+    // Handle incoming connections
 }
