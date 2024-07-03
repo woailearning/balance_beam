@@ -29,9 +29,13 @@ pub enum Error {
 /// Err(Error) If Content-Length is present but invaild.
 ///
 /// # Param
-/// - `request`: 
+/// - `request`: A reference to an HTTP request of type `http::Request<Vec<u8>>` from which the content 
+/// length is to be retrieved.
 ///
 /// # Return 
+/// - `Result<Option<usize>, Error>`: Returns `Ok(Some(content_length))` if the `Content-Length` is present
+/// and successfully parsed as a `usize`. Return `Ok(None)` if the `Content-Length` header is not present.
+/// Returns `Err(Error::InvaildContentLength)` if the header value cannot be parsed as a `usize`.
 ///
 fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>, Error> {
     // look for content-length header.
