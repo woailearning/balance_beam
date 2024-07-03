@@ -166,6 +166,15 @@ async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(
     Ok(())
 }
 
+/// # Brief
+/// This asynchronous function continuously clears the rate limiting counter at a specified
+/// interval. It runs an infinite loop that sleeps for the given interval and then clears 
+/// the rate limiting counter.
+///
+/// # Param
+/// - `state`: A reference to the `ProxyState` which contains the rates limiting counter.
+/// - `clear_interval`: The interval in seconds at which the rate limiting counter should be cleared.
+/// 
 async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) {
     loop {
         sleep(Duration::from_secs(clear_interval)).await;

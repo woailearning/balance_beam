@@ -29,10 +29,22 @@ pub enum Error {
 /// Err(Error) If Content-Length is present but invaild.
 ///
 /// # Param
-/// `request`
+/// - `request`: 
 ///
 /// # Return 
 ///
 fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>, Error> {
-
+    // look for content-length header.
+    if let Some(header_value) = request.headers().get("content-length") {
+        // If it exists, parse it as a usize(or return InvalidContentLength if it can't be parse as such)
+        Ok(Some(
+            header_value
+                .to_str()
+                .or(Err(Error::InvaildContentLength))?
+                .parse::<usize>()
+                .or(Err(Error::InvaildContentLength))?,
+        ))
+    } else {
+        Ok(None)
+    }
 }
