@@ -7,6 +7,9 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
+mod response;
+mod request;
+
 // #[derive(Parser, Debug)]
 // #[command(about = "Fun with load balancing")]
 
@@ -137,8 +140,13 @@ async fn active_health_check(state: &ProxyState) {
 /// is sent back to the client and an error is retuned. Otherwise, the function returns Ok(()).
 /// 
 /// # Param
+/// - `state`: A reference to the 'ProxyState' which contains the rate limiting counter and 
+/// the maxium allowed request per minutes.
+/// - `client_conn`: A mutable reference to the'TcpStream' representing the client connection.
 /// 
 /// # Return
+/// - `Result<(), std::io::Error>`: Return `Ok(())`, if the client is within the allowed rate,
+/// otherwises returns an error indicating that rate limiting has been enforced.     
 /// 
 async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(), std::io::Error> {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
@@ -167,7 +175,7 @@ async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) 
     }
 }
 
-async fn connect_to_upstream() {
+async fn connect_to_upstream() -> Result<> {
 
 }
 
@@ -183,9 +191,21 @@ async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
             log::debug!("Client finished sending requests. Shutting down connection");
             return;
         }
-    }
-    loop{
+    };
 
+    let upstream_ip = upstream_conn.peer_addr().unwrap().ip().to_string();
+
+    // The client may now send us one or more reuqests. 
+    // Keep trying to read requests until the
+    // client hangs up or we get an error.
+    loop{
+       // Read a request from a client
+       let mut reuqest = match request::read_from_stream(&mut client_conn).await {
+            Ok(request) => request,
+
+            // Handle case where client closed connection and is no longer sending requests
+            Err(request::Error::Incom) => ,
+       }
     }
 }
 
@@ -241,5 +261,4 @@ async fn main() {
     });
 
     // Handle incoming connections
-
 }
