@@ -52,3 +52,7 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
         Ok(None)
     }
 }
+
+fn read_from_stream() -> {
+
+}

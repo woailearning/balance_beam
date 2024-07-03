@@ -184,10 +184,23 @@ async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) 
     }
 }
 
+/// # Brief
+///
+/// # Param
+///
+/// # Return
+/// 
 async fn connect_to_upstream() -> Result<> {
 
 }
 
+
+/// # Brief
+///
+/// # Param
+///
+/// # Return
+/// 
 async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     log::info!("Connection received from {}", client_ip);
@@ -213,7 +226,16 @@ async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
             Ok(request) => request,
 
             // Handle case where client closed connection and is no longer sending requests
-            Err(request::Error::Incom) => ,
+            Err(request::Error::IncompleteRequest(0)) => {
+                log::info!("Client finished sending requests. Shutting down connection");
+                return;
+            },
+
+            // Handle I/O error in reading from client.
+            Err(request::Error::ConnectionError(io_err)) => {
+                log::info!("Error reading request from client stream {}", io_err);
+                return;
+            },
        }
     }
 }
