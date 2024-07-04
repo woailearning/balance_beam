@@ -1,4 +1,7 @@
+use tokio::net::TcpStream;
+
 const MAX_BODY_SIZE: usize = 10000;
+const MAX_NUM_HEADERS: usize = 32;
 
 #[derive(Debug)]
 pub enum Error {
@@ -53,6 +56,24 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
     }
 }
 
-fn read_from_stream() -> {
+/// # Brief
+/// 
+/// # Param
+/// 
+/// # Return
+/// 
+fn read_from_stream(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>, Error> {
+    let mut headers = [httparse::EMPTY_HEADER; MAX_NUM_HEADERS];
 
 }
+
+// fn read_to_stream() -> {
+// 
+// }
+
+// fn make_http_error(http::StatusCode) -> Error {
+//     let body = format!(
+//         "HTTP {} {}",
+//         .as_u16(),
+//     )
+// }

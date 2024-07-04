@@ -236,7 +236,27 @@ async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
                 log::info!("Error reading request from client stream {}", io_err);
                 return;
             },
-       }
+
+            Err(error) => {
+                log::debug!("Error parsing request: {:?}", error);
+                let response = response::make_http_error(match error {
+                    request::Error::IncompleteRequest(_) 
+                    | request::Error::MalformaedRequest(_) 
+                    | request::Error::InvaildContentLength 
+                    | request::Error::ContentLengthMismatch =>  http::StatusCode::BAD_GATEWAY,
+                    request::Error::RequestBodyTooLarge =>  http::StatusCode::PAYLOAD_TOO_LARGE,
+                    request::Error::ConnectionError(_) =>  http::StatusCode::SERVICE_UNAVAILABLE,
+                });
+                send_repsonse(&mut client_conn, &response).await;
+                continue;
+            }
+       };
+       log::info!(
+        "{} -> {}: {}",
+        client_ip,
+        upstream_ip,
+        request::format_request_line(&request)
+       )
     }
 }
 
