@@ -64,16 +64,51 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
 /// 
 fn read_from_stream(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>, Error> {
     let mut headers = [httparse::EMPTY_HEADER; MAX_NUM_HEADERS];
-
 }
 
 // fn read_to_stream() -> {
 // 
 // }
 
-// fn make_http_error(http::StatusCode) -> Error {
-//     let body = format!(
-//         "HTTP {} {}",
-//         .as_u16(),
-//     )
-// }
+/// #Beief 
+/// This is a helper function that creates an http::Response containing an HTTP error 
+/// that can be send a client.
+/// 
+/// # Param
+/// -`status` 
+/// 
+/// # Return 
+/// 
+fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>> {
+    let body = format!(
+        "HTTP {}, {}",
+        status.as_u16(),
+        status.canonical_reason().unwrap_or(""),
+    ) .into_bytes();
+
+    http::Response::builder()
+        .status(status)
+        .header("Content-Type", "test/plain")
+        .header("Content-Length", body.len().to_string())
+        .version(http::Version::HTTP_11)
+        .body(body)
+        .unwrap()
+}
+
+
+/// # Brief
+/// 
+/// # Param
+/// - `response`
+/// 
+/// # Return
+/// 
+pub fn format_response_lines(response: &http::Response<Vec<u8>>) -> String {
+    format!(
+        "{:?} {} {}",
+        response.version(),
+        response.status().as_str(),
+        response.status().canonical_reason().unwrap_or(""),
+    )
+}
+
