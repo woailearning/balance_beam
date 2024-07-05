@@ -1,3 +1,4 @@
+use http::request;
 use tokio::net::TcpStream;
 
 const MAX_BODY_SIZE: usize = 10000;
@@ -40,7 +41,7 @@ pub enum Error {
 /// and successfully parsed as a `usize`. Return `Ok(None)` if the `Content-Length` header is not present.
 /// Returns `Err(Error::InvaildContentLength)` if the header value cannot be parsed as a `usize`.
 ///
-fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>, Error> {
+pub async fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>, Error> {
     // look for content-length header.
     if let Some(header_value) = request.headers().get("content-length") {
         // If it exists, parse it as a usize(or return InvalidContentLength if it can't be parse as such)
@@ -56,14 +57,39 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
     }
 }
 
+/// # Beief
+/// 
+/// # Param
+/// 
+/// # Return
+/// 
+pub async fn read_header(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>, Error> {
+
+}
+
+/// 
+pub async fn read_body(stream: &mut TcpStream) -> Result<(), Error> {
+
+}
+
 /// # Brief
 /// 
 /// # Param
 /// 
 /// # Return
 /// 
-fn read_from_stream(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>, Error> {
-    let mut headers = [httparse::EMPTY_HEADER; MAX_NUM_HEADERS];
+pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>, Error> {
+    // Read headers
+    let mut request = read_header(stream).await?;
+    // Read body if the client supplied the Content-Length header (which it does for POST requests)
+    if let Some(content_length) = get_content_length(&request)? {
+        if content_length > MAX_BODY_SIZE {
+            return Err(Error::RequestBodyTooLarge);
+        } else {
+            read_body(stream, &mut request, content_length).await?
+        }
+    }
+    Ok(request)
 }
 
 // fn read_to_stream() -> {
@@ -79,7 +105,7 @@ fn read_from_stream(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>, E
 /// 
 /// # Return 
 /// 
-fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>> {
+pub async fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>> {
     let body = format!(
         "HTTP {}, {}",
         status.as_u16(),
