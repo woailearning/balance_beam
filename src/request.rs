@@ -90,9 +90,9 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
 /// # Return
 ///
 async fn read_header(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error> {
-    /// Try reading the headers from the request. We may not receive all the headers in one shot
-    /// (e.g. we might receive the first few bytes of a request, and then the rest follows later).
-    /// Try parsing repeatedly until we read a valid HTTP request.
+    // Try reading the headers from the request. We may not receive all the headers in one shot
+    // (e.g. we might receive the first few bytes of a request, and then the rest follows later).
+    // Try parsing repeatedly until we read a valid HTTP request.
     let mut request_buffer = [0_u8; MAX_BODY_SIZE];
     let mut bytes_read = 0;
 
@@ -189,6 +189,10 @@ pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Ve
         }
     }
     Ok(request)
+}
+
+pub async fn write_to_stream(request: http::Request, stream: &mut TcpStream) -> {
+
 }
 
 /// #Beief
