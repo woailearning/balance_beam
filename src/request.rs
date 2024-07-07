@@ -191,6 +191,11 @@ pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Ve
     Ok(request)
 }
 
+/// # Brief 
+/// 
+/// # Param
+/// 
+/// # Return
 pub async fn write_to_stream(
     request: http::Request<Vec<u8>>,
     stream: &mut TcpStream,
@@ -211,14 +216,34 @@ pub async fn write_to_stream(
     Ok(())
 }
 
-/// #Beief
+/// # Brief
+/// Provides a brief summary of what the function does. In this case, it's about 
+/// fomatting request line of HTTP request into a string.
+///
+/// # Param
+/// - `response`: An 'http::Request' object representing the HTTP request
+///
+/// # Return
+/// A 'String' containing the formatted request line
+///
+pub fn format_request_line(request: &http::Request<Vec<u8>>) -> String {
+    format!(
+        "{} {} {:?}",
+        request.method(),
+        request.uri(),
+        request.version()
+    )
+}
+
+/// # Brief
 /// This is a helper function that creates an http::Response containing an HTTP error
 /// that can be send a client.
 ///
 /// # Param
-/// -`status`
+/// -`status`: The HTTP status code indcating the error to the returned.
 ///
 /// # Return
+/// An 'http::Response<Vec<u8>>' containing the formatted HTTP error response.
 ///
 pub async fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>> {
     let body = format!(
@@ -235,20 +260,4 @@ pub async fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>
         .version(http::Version::HTTP_11)
         .body(body)
         .unwrap()
-}
-
-/// # Brief
-///
-/// # Param
-/// - `response`
-///
-/// # Return
-///
-pub fn format_request_line(request: &http::Request<Vec<u8>>) -> String {
-    format!(
-        "{} {} {:?}",
-        request.method(),
-        request.uri(),
-        request.version()
-    )
 }
