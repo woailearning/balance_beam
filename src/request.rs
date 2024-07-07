@@ -48,7 +48,7 @@ fn parse_request(buffer: &[u8]) -> Result<Option<(http::Request<Vec<u8>>, usize)
         let request = request.body(Vec::new()).unwrap();
 
         Ok(Some((request, len)))
-    }else {
+    } else {
         Ok(None)
     }
 }
@@ -83,7 +83,7 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
     }
 }
 
-/// # Beief
+/// # Brief
 ///
 /// # Param
 ///
@@ -108,10 +108,10 @@ async fn read_header(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, E
             return Err(Error::IncompleteRequest(bytes_read));
         }
         bytes_read += new_bytes;
-        
+
         // See if we've read a vaild request so far
         if let Some((mut request, headers_len)) = parse_request(&request_buffer[..bytes_read])? {
-            // we've read a complete set of headers. However if this was a POST request, a request 
+            // we've read a complete set of headers. However if this was a POST request, a request
             // body might have been included as well, and we might read part of the body out of the
             // stream into header_buffer. We need to add those bytes to the Request body so that
             // we don't lose them.
@@ -156,13 +156,13 @@ async fn read_body(
             // We didn't manage to read a complete request.
             return Err(Error::ContentLengthMismatch);
         }
-    
+
         // Make sure the client didn't send us *too many* bytes
         if request.body().len() + bytes_read > content_length {
             log::debug!(
                 "Client sent more bytes than we expected based on the given content length"
             );
-            return Err(Error::ContentLengthMismatch)
+            return Err(Error::ContentLengthMismatch);
         }
 
         // Store the received by in the request body.
@@ -191,8 +191,24 @@ pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Ve
     Ok(request)
 }
 
-pub async fn write_to_stream(request: http::Request, stream: &mut TcpStream) -> {
-
+pub async fn write_to_stream(
+    request: http::Request<Vec<u8>>,
+    stream: &mut TcpStream,
+) -> Result<(), std::io::Error> {
+    stream
+        .write(&format_request_line(&request).into_bytes())
+        .await?;
+    stream.write(&['\r' as u8, '\n' as u8]).await?;
+    for (header_name, header_value) in request.headers() {
+        stream.write(&format!("{}", header_name).as_bytes()).await?;
+        stream.write(header_value.as_bytes()).await?;
+        stream.write(&['\r' as u8, '\n' as u8]).await?;
+    }
+    stream.write(&['\r' as u8, '\n' as u8]).await?;
+    if request.body().len() > 0 {
+        stream.write(request.body()).await?;
+    }
+    Ok(())
 }
 
 /// #Beief
@@ -228,11 +244,11 @@ pub async fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>
 ///
 /// # Return
 ///
-pub fn format_response_lines(response: &http::Response<Vec<u8>>) -> String {
+pub fn format_request_line(request: &http::Request<Vec<u8>>) -> String {
     format!(
-        "{:?} {} {}",
-        response.version(),
-        response.status().as_str(),
-        response.status().canonical_reason().unwrap_or(""),
+        "{} {} {:?}",
+        request.method(),
+        request.uri(),
+        request.version()
     )
 }
