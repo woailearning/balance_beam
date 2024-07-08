@@ -130,7 +130,7 @@ async fn read_header(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, E
 ///
 /// # Return
 ///
-async fn read_body(
+pub async fn read_body(
     stream: &mut TcpStream,
     request: &mut http::Request<Vec<u8>>,
     content_length: usize,
@@ -260,4 +260,17 @@ pub async fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>
         .version(http::Version::HTTP_11)
         .body(body)
         .unwrap()
+}
+
+pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Result<Vec<u8>> {
+    // Read headers
+    let mut request = read_headers(stream).await?;
+    // Read body if the client supplied the Content-Length header (which it does for POST requests)
+    if let Some(content_length) = get_content_length(request)? {
+        if content_length > MAX_BODY_SIZE {
+            return Err(Rrror::RequestBodyTooLarge);
+        } else {
+            read_body(stream, &mut request, content_length).await?
+        }
+    }
 }
