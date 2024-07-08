@@ -28,30 +28,6 @@ pub enum Error {
     ConnectionError(std::io::Error),
 }
 
-fn parse_request(buffer: &[u8]) -> Result<Option<(http::Request<Vec<u8>>, usize)>, Error> {
-    let mut headers = [httparse::EMPTY_HEADER; MAX_NUM_HEADERS];
-    let mut req = httparse::Request::new(&mut headers);
-
-    let res = req
-        .parse(buffer)
-        .or_else(|err| Err(Error::MalformaedRequest(err)))?;
-
-    if let httparse::Status::Complete(len) = res {
-        let mut request = http::Request::builder()
-            .method(req.method.unwrap())
-            .uri(req.path.unwrap())
-            .version(http::Version::HTTP_11);
-
-        for header in req.headers {
-            request = request.header(header.name, header.value);
-        }
-        let request = request.body(Vec::new()).unwrap();
-
-        Ok(Some((request, len)))
-    } else {
-        Ok(None)
-    }
-}
 
 /// # Brief
 /// Extracts the Content-Length header value from the provided request. Return Ok(Some(usize)) if
@@ -84,10 +60,56 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
 }
 
 /// # Brief
+/// Parses an HTTP request from the given buffer and constructs an `http::Request` object.
+/// 
+/// # Param
+/// - `buffer`: A slice of `u8` bytes containing the HTTP request to be parsed
+/// 
+/// # Return
+/// Return a `Result`:
+/// - `Ok(Some((request, len)))`: if parseing succeeds and the request is complete. `request` is an
+/// `http::Request` containing parsed headers and an empty body. `len` is the Length of the parsed 
+/// request in bytes.
+/// - `Ok(None)`: if parsing is incomplete and requires more data.
+/// - `Err(Error)`: if there was an error parsing the request, encapsulated in the `Error` enum.
+/// 
+fn parse_request(buffer: &[u8]) -> Result<Option<(http::Request<Vec<u8>>, usize)>, Error> {
+    let mut headers = [httparse::EMPTY_HEADER; MAX_NUM_HEADERS];
+    let mut req = httparse::Request::new(&mut headers);
+
+    let res = req
+        .parse(buffer)
+        .or_else(|err| Err(Error::MalformaedRequest(err)))?;
+
+    if let httparse::Status::Complete(len) = res {
+        let mut request = http::Request::builder()
+            .method(req.method.unwrap())
+            .uri(req.path.unwrap())
+            .version(http::Version::HTTP_11);
+
+        for header in req.headers {
+            request = request.header(header.name, header.value);
+            // The header of HTTP request have many pairs(name - value)
+        }
+        let request = request.body(Vec::new()).unwrap();
+
+        Ok(Some((request, len)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// # Brief
+/// Reads the HTTP request headers from a TCP stream an HTTP request object.
 ///
 /// # Param
+/// - `stream`: A mutable reference to the TCP stream object to reading from
 ///
 /// # Return
+/// - 'Result<http::Request<Vec<u8>>, Error>`: Return an HTTP request object
+/// cantaining the request headers. 
+/// - `Err(Error)`: If an error occurs during reading or parsing,
+/// returns an error result.
 ///
 async fn read_header(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error> {
     // Try reading the headers from the request. We may not receive all the headers in one shot
@@ -102,7 +124,11 @@ async fn read_header(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, E
             .read(&mut request_buffer[bytes_read..])
             .await
             .or_else(|err| Err(Error::ConnectionError(err)))?;
-
+            // TCP connection transmits a stream of data, not messages
+            // Data can be split into fragments for transmission
+            // Receiver handles order and completeness of fragments
+            // Amount of data read per call to stream.read() is indeterminat
+            
         if new_bytes == 0 {
             // We didn't manage to read a complete request
             return Err(Error::IncompleteRequest(bytes_read));
@@ -125,12 +151,18 @@ async fn read_header(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, E
 }
 
 /// # Brief
+/// Reads the body of an HTTP request from a TCP stream.
 ///
 /// # Param
+/// - `stream`: A mutable reference to a `TcpStream` from which the body will be read
+/// - `request`: A mutable reference to an HTTP `Request` object where the body will be shared.
+/// - `content_length`: The expcted Length of the request body in bytes.
 ///
 /// # Return
-///
-pub async fn read_body(
+/// - `Error::ConnectionError`: if there is an issue reading from the TCP stream.
+/// - `Error::ContentLengthMismatch`: If the number of bytes read does not match the expected content Length.
+/// 
+async fn read_body(
     stream: &mut TcpStream,
     request: &mut http::Request<Vec<u8>>,
     content_length: usize,
@@ -168,15 +200,22 @@ pub async fn read_body(
         // Store the received by in the request body.
         request.body_mut().extend_from_slice(&buffer[..bytes_read]);
     }
+    // get content fulled body length
     Ok(())
 }
 
 /// # Brief
+/// Reads an HTTP request from a TCP stream, including headers and optional body.
 ///
 /// # Param
+/// - `stream`: A mutable reference to a `TcpStream` from which the HTTP request will be read.
 ///
 /// # Return
-///
+/// Returns `Result` which, on success, contains on `http::Request` which the request headers and body.
+/// on failure, it returns an `Error` indicating what went wrong during the read process.
+/// - `http::Request<Vec<u8>>`: Retrieve the request from read_header(), then pass it as a parameter to read_body()
+/// - `Err(Error)`: When read_header() or read_body() encounters an error, it should throw an Error to the caller.
+/// 
 pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error> {
     // Read headers
     let mut request = read_header(stream).await?;
@@ -192,10 +231,17 @@ pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Ve
 }
 
 /// # Brief 
+/// Writes an HTTP request to a TCP stream.
 /// 
 /// # Param
+/// - `request`: A `http::Request` containing the HTTP request to be written to the stream. The body is 
+/// represented as a `Vec<u8>`,
+/// - `stream`: A mutable reference to a `TcpStream` to which the HTTP request will be written.
 /// 
 /// # Return
+/// Returns a `Result` which, on success, is `Ok(())`. On failure, it returns an `std::io::Error`
+/// indicating what went wrong during the write process.
+/// 
 pub async fn write_to_stream(
     request: http::Request<Vec<u8>>,
     stream: &mut TcpStream,
@@ -236,41 +282,10 @@ pub fn format_request_line(request: &http::Request<Vec<u8>>) -> String {
 }
 
 /// # Brief
-/// This is a helper function that creates an http::Response containing an HTTP error
-/// that can be send a client.
-///
+/// 
 /// # Param
-/// -`status`: The HTTP status code indcating the error to the returned.
-///
+/// 
 /// # Return
-/// An 'http::Response<Vec<u8>>' containing the formatted HTTP error response.
-///
-pub async fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>> {
-    let body = format!(
-        "HTTP {}, {}",
-        status.as_u16(),
-        status.canonical_reason().unwrap_or(""),
-    )
-    .into_bytes();
+pub fn extend_header_value(request: &mut http::Request<Vec<u8>>, name: &'static str, extend_value: &str) {
 
-    http::Response::builder()
-        .status(status)
-        .header("Content-Type", "test/plain")
-        .header("Content-Length", body.len().to_string())
-        .version(http::Version::HTTP_11)
-        .body(body)
-        .unwrap()
-}
-
-pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Result<Vec<u8>> {
-    // Read headers
-    let mut request = read_headers(stream).await?;
-    // Read body if the client supplied the Content-Length header (which it does for POST requests)
-    if let Some(content_length) = get_content_length(request)? {
-        if content_length > MAX_BODY_SIZE {
-            return Err(Rrror::RequestBodyTooLarge);
-        } else {
-            read_body(stream, &mut request, content_length).await?
-        }
-    }
 }
