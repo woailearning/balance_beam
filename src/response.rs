@@ -32,42 +32,44 @@ pub enum Error {
     ConnetionError(std::io::Error),
 }
 
-/// # Brief
-/// 
-/// # Param
-/// 
-/// # Return
-/// 
-fn parse_response(buffer: &[u8]) -> Result<http::Response<Vec<u8>>, Error> {
-    let mut headers = [httparse::EMPTY_HEADER; MAX_NUM_HEADERS];
-    let mut resp = http::Response::new(headers);
-    
-    let res = resp
-        .parse(buffer)
-        .or_else(|err| Err(Error::MalformeResponse(err)));
-    
-    if let httparse::Status::Complete(len) = res {
-        let mut response = http::Response::builder()
-            .status(buffer)
-            .version(http::Version::HTTP_11);
-        for header in resp.headers {
-            response = response.header(header.name, header.value);
-        }
-        let response = response.body(Vec::new()).unwrap();
-        Ok(response)
-    }
-}
-
 fn get_content_length(response: &http::Response<Vec<u8>>) -> Result<Option<usize>, Error> {
     // Look for content-length header
     if let Some(header_value) = response.headers().get("content-length") {
         Ok(Some(
             header_value
                 .to_str()
-                .or_else(|err|Err(Error::InvalidContentLength))
+                .or(Err(Error::InvalidContentLength))?
                 .parse::<usize>()
-                .or_else(|err|Err(Error::InvalidContentLength))
+                .or_else(|err| Err(Error::InvalidContentLength))?
         ))
+    } else {
+        Ok(None)
+    }
+}
+
+/// # Brief
+/// 
+/// # Param
+/// 
+/// # Return
+/// 
+fn parse_response(buffer: &[u8]) -> Result<Option<(http::Response<Vec<u8>>, usize)>, Error> {
+    let mut headers = [httparse::EMPTY_HEADER; MAX_NUM_HEADERS];
+    let mut resp = httparse::Response::new(&mut headers);
+    
+    let res = resp
+        .parse(buffer)
+        .or_else(|err| Err(Error::MalformeResponse(err)))?;
+    
+    if let httparse::Status::Complete(len) = res {
+        let mut response = http::Response::builder()
+            .status(resp.code.unwrap())
+            .version(http::Version::HTTP_11);
+        for header in resp.headers {
+            response = response.header(header.name, header.value);
+        }
+        let response = response.body(Vec::new()).unwrap();
+        Ok(Some((response, len)))
     } else {
         Ok(None)
     }
