@@ -128,7 +128,7 @@ async fn read_header(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, E
             // Data can be split into fragments for transmission
             // Receiver handles order and completeness of fragments
             // Amount of data read per call to stream.read() is indeterminat
-            
+
         if new_bytes == 0 {
             // We didn't manage to read a complete request
             return Err(Error::IncompleteRequest(bytes_read));
@@ -144,6 +144,7 @@ async fn read_header(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, E
             request
                 .body_mut()
                 .extend_from_slice(&request_buffer[headers_len..bytes_read]);
+            // bytes_read used as index
 
             return Ok(request);
         }

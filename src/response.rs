@@ -5,12 +5,6 @@ const MAX_HEADERS_SIZE: usize = 8000;
 const MAX_BODY_SIZE: usize = 10000000;
 const MAX_NUM_HEADERS: usize = 32;
 
-/// # Brief
-/// 
-/// # Param
-/// 
-/// # Return
-/// 
 #[derive(Debug)]
 pub enum Error {
     /// Client hung up before sending a complete request.
@@ -75,11 +69,25 @@ fn parse_response(buffer: &[u8]) -> Result<Option<(http::Response<Vec<u8>>, usiz
     }
 }
 
+/// This function attempts to read the response line and headers from the provided `TcpStream`.
+/// It handles the case where not all headers may be received in single read operation. After
+/// successfully reading the headers, any remaining data in the buffer is considered the start of
+/// the response body.
+/// 
 /// # Brief
+/// Reads the HTTP respnse headers from a TCP stream.
 /// 
 /// # Param
+/// - `stream`: A mutable reference to a `TcpStream` from which the HTTP response headers will be read.
 /// 
 /// # Return
+/// - `Ok(http::Response<Vec<u8>>` an success, cantaining the response with headers and any initial part 
+/// - `Err(Error)` if there is an error during reading or parsing the headers.
+/// 
+/// # Error
+/// - `Error::ConnectionError`: If there was an error reading from the TCP stream.
+/// - `Error::IncompleteResponse`: If the stream is closed before a complete response is received.
+/// - `Error::MalformadResponse`: If the response received is not a valid HTTP according to the `parse_response`
 /// 
 async fn read_headers(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>, Error> {
     // Try reading the headers from the response. We may not receive all the headers in one shot
@@ -92,7 +100,7 @@ async fn read_headers(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>,
         let new_bytes = stream
             .read(&mut response_buffer[bytes_read..])
             .await
-            .or_else(|err| Err(Error::ConnetionError(err)));
+            .or_else(|err| Err(Error::ConnetionError(err)))?;
 
         if new_bytes == 0 {
             return Err(Error::IncompleteResponse);
