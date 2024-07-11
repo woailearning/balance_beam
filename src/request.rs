@@ -346,6 +346,6 @@ pub fn extend_header_value(request: &mut http::Request<Vec<u8>>, name: &'static 
         None => extend_value.as_bytes().to_owned(),
     };
     request
-        .header_mut()
+        .headers_mut()
         .insert(name, http::HeaderValue::from_bytes(&new_value).unwrap());
 }
