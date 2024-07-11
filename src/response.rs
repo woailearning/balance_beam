@@ -26,9 +26,26 @@ pub enum Error {
     ConnetionError(std::io::Error),
 }
 
+/// This function attempts to retrieve the `Content-Length` header from the provided HTTP response.
+///
+/// # Brief
+/// Retrieves the content length from the HTTP response headers, if available.
+/// 
+/// # Paoam
+/// - `response`: A reference to an `http::Response<Vec<u8>>` from which the `Content-Length` header will be retrieved.
+/// 
+/// # Return
+/// - `Ok(Some(usize))`: if the `Content-Length` header is found and is a valid integer.
+/// - `Ok(None)`: if the `Content-Length` header is not present.
+/// - `Err(Error)`: if the `Content-Length` header is present but is not a valid integer.
+/// 
+/// # Error
+/// - `Error::InvalidContentLength`: the `Content-Length` header is present but can not parse a valid integer.
+/// 
 fn get_content_length(response: &http::Response<Vec<u8>>) -> Result<Option<usize>, Error> {
     // Look for content-length header
     if let Some(header_value) = response.headers().get("content-length") {
+        // If it exists, parse it as a usize (or return InvalidResponseError if it can't be parsed as such)
         Ok(Some(
             header_value
                 .to_str()
@@ -37,15 +54,28 @@ fn get_content_length(response: &http::Response<Vec<u8>>) -> Result<Option<usize
                 .or_else(|err| Err(Error::InvalidContentLength))?
         ))
     } else {
+        // If it doesn't exist, return None.
         Ok(None)
     }
 }
 
+/// This function attempts to parse HTTP response from the provided buffer.
+/// It processes the response line and headers. If the parsing is complete,
+/// it returns the response and the length of the parsed data.
+/// 
 /// # Brief
+/// Parse an HTTP response from a buffer.
 /// 
 /// # Param
+/// - `buffer` A bytes slice containing the **HTTP response** to parsed.
 /// 
 /// # Return
+/// - `Ok(Some(http::Response<Vec<u8>>))`: If a valid HTTP response is successfully parsed.
+/// - `Ok(None)`: if the response is not complete.
+/// - `Err(Error)`: if the response is not valid HTTP response.
+/// 
+/// # Error
+/// - `Error::MalformeResponse`: If the response is not HTTP response according to the `httparse` crate
 /// 
 fn parse_response(buffer: &[u8]) -> Result<Option<(http::Response<Vec<u8>>, usize)>, Error> {
     let mut headers = [httparse::EMPTY_HEADER; MAX_NUM_HEADERS];
@@ -107,7 +137,7 @@ async fn read_headers(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>,
         }
         bytes_read += new_bytes;
 
-        // See if we've read a valid response so fat
+        // See if we've read a valid response (usize) so far
         if let Some((mut response, headers_len)) = parse_response(&response_buffer[..bytes_read])? {
             // We've read a complete set of headers. We may have also read the first part of the 
             // response body; take whatever is left over in the response buffer and save that as 
@@ -117,14 +147,24 @@ async fn read_headers(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>,
                 .extend_from_slice(&response_buffer[headers_len..bytes_read]);
             return Ok(response);
         }
+        // continue, when we got None from parse_response()
     }
 }
 
+/// This function reads the body for a response from TcpStream. If the Content-Length header is present,
+/// it reads that many bytes; otherwise, it reads bytes until the connectino is closed.
+/// 
 /// # Brief
+/// Reads the body of an HTTP response from a TCP stream.
 /// 
 /// # Param
+/// - `stream`: A mutable
+/// - `response`: A mutable 
 /// 
 /// # Return
+///
+/// # Error
+///
 async fn read_body(stream: &mut TcpStream, response: &mut http::Response<Vec<u8>>) -> Result<(), Error> {
     let content_length = get_content_length(response)?;
 

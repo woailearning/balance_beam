@@ -29,6 +29,7 @@ pub enum Error {
 }
 
 
+///
 /// # Brief
 /// Extracts the Content-Length header value from the provided request. Return Ok(Some(usize)) if
 /// the Content-Length is present and vaild, Ok(None) if Content-Length is not present, or
@@ -59,6 +60,7 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
     }
 }
 
+///
 /// # Brief
 /// Parses an HTTP request from the given buffer and constructs an `http::Request` object.
 /// 
@@ -99,6 +101,7 @@ fn parse_request(buffer: &[u8]) -> Result<Option<(http::Request<Vec<u8>>, usize)
     }
 }
 
+/// 
 /// # Brief
 /// Reads the HTTP request headers from a TCP stream an HTTP request object.
 ///
@@ -151,6 +154,7 @@ async fn read_header(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, E
     }
 }
 
+/// 
 /// # Brief
 /// Reads the body of an HTTP request from a TCP stream.
 ///
@@ -205,6 +209,7 @@ async fn read_body(
     Ok(())
 }
 
+/// 
 /// # Brief
 /// Reads an HTTP request from a TCP stream, including headers and optional body.
 ///
@@ -231,6 +236,7 @@ pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Ve
     Ok(request)
 }
 
+/// 
 /// # Brief 
 /// Writes an HTTP request to a TCP stream.
 /// 
@@ -263,6 +269,7 @@ pub async fn write_to_stream(
     Ok(())
 }
 
+/// 
 /// # Brief
 /// Provides a brief summary of what the function does. In this case, it's about 
 /// fomatting request line of HTTP request into a string.
