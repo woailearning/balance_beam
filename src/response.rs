@@ -24,10 +24,13 @@ pub enum Error {
     ContentLengthMismatch,
 
     /// Encounter an I/O error when reading/writing a TcpStream
-    ConnetionError(std::io::Error),
+    ConnectionError(std::io::Error),
 }
 
-/// This function attempts to retrieve the `Content-Length` header from the provided HTTP response.
+///
+/// Extracts the Content-Length header value from the provided response. Return Ok(Some(usize)) if
+/// the Content-Length is present and vaild, Ok(None) if Content-Length is not present, or
+/// Err(Error) If Content-Length is present but invaild.
 ///
 /// # Brief
 /// Retrieves the content length from the HTTP response headers, if available.
@@ -36,7 +39,8 @@ pub enum Error {
 /// - `response`: A reference to an `http::Response<Vec<u8>>` from which the `Content-Length` header will be retrieved.
 ///
 /// # Return
-/// - `Ok(Some(usize))`: if the `Content-Length` header is found and is a valid integer.
+/// - `Result<Option<usize>, Error>`: 
+/// - `Ok(Some(usize))`: if the `Content-Length` is present and successfully parsed as a `usize`.
 /// - `Ok(None)`: if the `Content-Length` header is not present.
 /// - `Err(Error)`: if the `Content-Length` header is present but is not a valid integer.
 ///
@@ -65,15 +69,16 @@ fn get_content_length(response: &http::Response<Vec<u8>>) -> Result<Option<usize
 /// it returns the response and the length of the parsed data.
 ///
 /// # Brief
-/// Parse an HTTP response from a buffer.
+/// Parses an HTTP response from the given buffer and constructs an `http::Response` object.
 ///
 /// # Param
 /// - `buffer` A bytes slice containing the **HTTP response** to parsed.
 ///
 /// # Return
-/// - `Ok(Some(http::Response<Vec<u8>>))`: If a valid HTTP response is successfully parsed.
-/// - `Ok(None)`: if the response is not complete.
-/// - `Err(Error)`: if the response is not valid HTTP response.
+/// Return a `Result<Option<(http::Response<_>, usize)>, Error>`:
+/// - `Ok(Some((http::Response<Vec<u8>>, usize)))`: if the `Content-Length` is present and successfully parsed as a `usize`.
+/// - `Ok(None)`: if the `Content-Length` header is not present.
+/// - `Err(Error)`: if there was an error parsing the response, encapsulated in the `Error` enum.
 ///
 /// # Error
 /// - `Error::MalformeResponse`: If the response is not HTTP response according to the `httparse` crate
@@ -92,6 +97,7 @@ fn parse_response(buffer: &[u8]) -> Result<Option<(http::Response<Vec<u8>>, usiz
             .version(http::Version::HTTP_11);
         for header in resp.headers {
             response = response.header(header.name, header.value);
+            // The header of HTTP response have many pairs(name - value)
         }
         let response = response.body(Vec::new()).unwrap();
         Ok(Some((response, len)))
@@ -106,13 +112,14 @@ fn parse_response(buffer: &[u8]) -> Result<Option<(http::Response<Vec<u8>>, usiz
 /// the response body.
 ///
 /// # Brief
-/// Reads the HTTP respnse headers from a TCP stream.
+/// Reads the HTTP response headers from a TCP stream.
 ///
 /// # Param
 /// - `stream`: A mutable reference to a `TcpStream` from which the HTTP response headers will be read.
 ///
 /// # Return
-/// - `Ok(http::Response<Vec<u8>>` an success, cantaining the response with headers and any initial part
+/// Return a 'Result<http::Response<Vec<u8>>, Error>`:
+/// - `Ok(http::Response<Vec<u8>>` Return an HTTP response object cantaining the response headers.
 /// - `Err(Error)` if there is an error during reading or parsing the headers.
 ///
 /// # Error
@@ -131,7 +138,7 @@ async fn read_headers(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>,
         let new_bytes = stream
             .read(&mut response_buffer[bytes_read..])
             .await
-            .or_else(|err| Err(Error::ConnetionError(err)))?;
+            .or_else(|err| Err(Error::ConnectionError(err)))?;
 
         if new_bytes == 0 {
             return Err(Error::IncompleteResponse);
@@ -153,7 +160,7 @@ async fn read_headers(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>,
 }
 
 /// This function reads the body for a response from TcpStream. If the Content-Length header is present,
-/// it reads that many bytes; otherwise, it reads bytes until the connectino is closed.
+/// it reads that many bytes; otherwise, it reads bytes until the connection is closed.
 ///
 /// # Brief
 /// Reads the body of an HTTP response from a TCP stream.
@@ -163,13 +170,15 @@ async fn read_headers(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>,
 /// - `response`: A mutable reference to  an `http::Resposne<Vec<u8>>` which will hold the response body.
 ///
 /// # Return
-/// Returns a `Result`:
+/// Returns a `Result<(), Error>`:
 /// - `Ok(())` on success,indicating the body has been read successfully.
 /// - `Err(Error)` if there is an error during the read process.
 ///
 /// # Error
-/// - `Error::ConnectionError`: If there is an error, reading from the TCP stream
-/// - `Error::ContentLengthMismatch`: If the server closes the connection before the entire body (as specified by `Content-Length`) is read.
+/// - `Error::ConnectionError`: if there is an issue reading from the TCP stream.
+/// - `Error::ContentLengthMismatch`: If the number of bytes read does not match the expected content Length.
+/// - `Error::ResponseBodyTooLarge`: If the body of response is too Large, then we throw that bytes away.
+/// - `Error::InvalidContentLength`: the Content-Length header is present but can not parse a valid integer(from get_content_length()).
 ///
 async fn read_body(
     stream: &mut TcpStream,
@@ -182,7 +191,7 @@ async fn read_body(
         let bytes_read = stream
             .read(&mut buffer)
             .await
-            .or_else(|err| Err(Error::ConnetionError(err)))?;
+            .or_else(|err| Err(Error::ConnectionError(err)))?;
 
         if bytes_read == 0 {
             // The server has hung up
@@ -195,6 +204,16 @@ async fn read_body(
                 return Err(Error::ContentLengthMismatch);
             }
         }
+        // Make sure server doesn't send move bytes than it promised to send
+        if content_length.is_some() && response.body().len() + bytes_read > content_length.unwrap() {
+            return Err(Error::ContentLengthMismatch)
+        }
+        // Make sure server doesn't send more bytes than we allow
+        if response.body().len() + bytes_read > MAX_BODY_SIZE {
+            return Err(Error::ResponseBodyTooLarge)
+        }
+        // Append received bytes to the response body
+        response.body_mut().extend_from_slice(&buffer[..bytes_read])
     }
     Ok(())
 }
@@ -241,7 +260,7 @@ pub async fn read_from_stream(
 /// Writes an HTTP response to a TCP stream
 ///
 /// # Param
-/// - `response`: An reference ``http::Response<Vec<u8>>` object representing the HTTP response to write.
+/// - `response`: An reference `http::Response<Vec<u8>>` object representing the HTTP response to write.
 /// - `stream`: A mutable reference to a `TcpStream` where the response will be written.
 ///
 /// # Return
@@ -276,18 +295,18 @@ async fn write_to_stream(
 }
 
 ///
-/// This function takes an `http::Request<Vec<u8>>` object and construct a formatted string
+/// This function takes an `http::Response<Vec<u8>>` object and construct a formatted string
 /// representing the response line, which includes HTTP Version, status code and reason pharse.
 ///
 /// # Brief
 /// Provides a brief summray of what the function does. In this case, it's
-/// about fotmatting request line of HTTP request into a String.
+/// fotmatting response line of HTTP response into a String.
 ///
 /// # Param
-/// -`response`: An `http::Response` object representing the HTTP request.
+/// -`response`: An `http::Response` object representing the HTTP response.
 ///
 /// # Return
-/// A `String` containing the formatted request line.
+/// A `String` containing the formatted response line.
 ///
 pub fn format_response_line(response: &http::Response<Vec<u8>>) -> String {
     format!(
