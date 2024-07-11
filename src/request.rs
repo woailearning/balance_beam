@@ -275,7 +275,7 @@ pub async fn write_to_stream(
 /// fomatting request line of HTTP request into a string.
 ///
 /// # Param
-/// - `response`: An 'http::Request' object representing the HTTP request
+/// - `request`: An 'http::Request' object representing the HTTP request
 ///
 /// # Return
 /// A 'String' containing the formatted request line

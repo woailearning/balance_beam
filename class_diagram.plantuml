@@ -1,0 +1,29 @@
+
+enum PError {
+    IncompleteResponse,
+
+    MalformeResponse(httparse::Error),
+
+    InvalidContentLength,
+    
+    ResponseBodyTooLarge,
+
+    ContentLengthMismatch,
+
+    ConnetionError(std::io::Error),
+}
+
+
+enum QError {
+    IncompleteRequest(usize),
+
+    MalformaedRequest(httparse::Error),
+
+    InvaildContentLength,
+
+    ContentLengthMismatch,
+
+    RequestBodyTooLarge,
+
+    ConnectionError(std::io::Error),
+}

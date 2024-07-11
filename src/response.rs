@@ -1,5 +1,6 @@
+use http::request;
 use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const MAX_HEADERS_SIZE: usize = 8000;
 const MAX_BODY_SIZE: usize = 10000000;
@@ -158,12 +159,17 @@ async fn read_headers(stream: &mut TcpStream) -> Result<http::Response<Vec<u8>>,
 /// Reads the body of an HTTP response from a TCP stream.
 /// 
 /// # Param
-/// - `stream`: A mutable
-/// - `response`: A mutable 
+/// - `stream`: A mutable reference to a `TcpStream ` from which the HTTP resposne body will be present.
+/// - `response`: A mutable reference to  an `http::Resposne<Vec<u8>>` which will hold the response body.
 /// 
 /// # Return
+/// Returns a `Result`:
+/// - `Ok(())` on success,indicating the body has been read successfully.
+/// - `Err(Error)` if there is an error during the read process.
 ///
 /// # Error
+/// - `Error::ConnectionError`: If there is an error, reading from the TCP stream
+/// - `Error::ContentLengthMismatch`: If the server closes the connection before the entire body (as specified by `Content-Length`) is read.
 ///
 async fn read_body(stream: &mut TcpStream, response: &mut http::Response<Vec<u8>>) -> Result<(), Error> {
     let content_length = get_content_length(response)?;
@@ -190,15 +196,23 @@ async fn read_body(stream: &mut TcpStream, response: &mut http::Response<Vec<u8>
     Ok(())
 }
 
-async fn write_to_stream (stream: &mut TcpStream) -> Result<(), std::io::Error> {
-
-}
-
+/// 
 /// # Brief
 /// 
 /// # Param
+/// - `stream`: A mutable reference to a `TcpStream` from which the HTTP response body will be read.
+/// - `request_method`: A mutable reference to an `http::Response<Vec<u8>>` which will hold the response body.
 /// 
 /// # Return
+/// Return a `Result`:
+/// 
+/// # Error
+/// 
+/// - `Error::ConnectionError`: if there is an error reading from the TCP stream.
+/// 
+/// - `Error::ContentLengthMismatch`: If the server closes the connection before the entire body(as specifie by `Content-Length`) is read.(from read_header)
+/// - `Error::IncompleteResponse`: If the stream is closed before a compelte response is received. (from read_body)
+/// - `Error::MalformadResponse`: If the response received is not valid HTTP response according to the `parse_response`(from read_body)
 /// 
 pub async fn read_from_stream(stream: &mut TcpStream, request_method: &http::Method) -> Result<http::Response<Vec<u8>>, Error> {
     let mut response = read_headers(stream).await?;
@@ -213,6 +227,52 @@ pub async fn read_from_stream(stream: &mut TcpStream, request_method: &http::Met
     Ok(response)
 }
 
+///
+/// # Brief
+/// 
+/// # Param
+/// 
+/// # Return
+/// 
+async fn write_to_stream (response: &http::Response<Vec<u8>> , stream: &mut TcpStream) -> Result<(), std::io::Error> {
+    stream
+        .write(&format_response_line(&response).into_bytes())
+        .await?;
+    stream.write(&['\r' as u8, '\n' as u8]).await?;
+
+    for (header_name, header_value) in response.headers() {
+        stream.write(&format!("{}:", header_name).into_bytes()).await?;
+        stream.write(header_value.as_bytes()).await?;
+        stream.write(&['\r' as u8, '\n' as u8]).await?;
+    }
+    stream.write(&['\r' as u8, '\n' as u8]).await?;
+    if response.body().len() > 0 {
+        stream.write(response.body()).await?;
+    }
+    Ok(())
+}
+
+/// 
+/// # Brief
+/// Provides a brief summray of what the function does. In this case, it's
+/// about fotmatting request line of HTTP request into a String.
+/// 
+/// # Param
+/// -`response`: An `http::Response` object representing the HTTP request.
+/// 
+/// # Return
+/// A `String` containing the formatted request line.
+/// 
+pub fn format_response_line(response: &http::Response<Vec<u8>>) -> String {
+    format!(
+        "{:?} ,{} {}",
+        response.version(),
+        response.status().as_str(),
+        response.status().canonical_reason().unwrap_or("")
+    )
+}
+
+/// 
 /// # Brief
 /// This is a helper function that creates an http::Response containing an HTTP error
 /// that can be send a client.
