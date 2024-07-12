@@ -67,6 +67,7 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
     }
 }
 
+///
 /// This function attempts to parse HTTP request from the provided buffer.
 /// It processes the request line and **headers**. If the parsing is complete,
 /// it returns the request and the length of the parsed data.
@@ -200,6 +201,10 @@ async fn read_body(
 ) -> Result<(), Error> {
     // Keep reading data until we read the full body length, or until we hit an error.
     while request.body().len() < content_length {
+        // content_length - bytes_read < body.len() < content_length : Error::ContentLengthMismatch
+        // content_length - bytes_read >= body().len() & body.len() < content_length : continue to extend
+        // (after extend) body.len() == content_length: break
+
         // Read up to 512 bytes at a time. (If the client only sent a small body, then only allocate
         // space to read that body )
         let mut buffer = vec![0_u8; min(512, content_length)];
@@ -208,7 +213,7 @@ async fn read_body(
             .await
             .or_else(|err| Err(Error::ConnectionError(err)))?;
 
-        // Make sure the client is still sending us bytes.
+        // Make sure the client is still sending us bytes.(too few)
         if bytes_read == 0 {
             log::debug!(
                 "Client hung up after sending a body of length {}, even though it said the current \
@@ -229,7 +234,7 @@ async fn read_body(
         }
         // Store the received bytes in the request body.
         request.body_mut().extend_from_slice(&buffer[..bytes_read]);
-    }
+    } 
     // get content fulled body length
     Ok(())
 }
@@ -335,6 +340,7 @@ pub fn format_request_line(request: &http::Request<Vec<u8>>) -> String {
     )
 }
 
+/// 
 /// This function appends to a header value (adding a new header if header is not already 
 /// present). This is used to add the client's IP address to the end of the X-forwarded-For
 /// list, or to add a new X-forwards-For header if one is not already present.
