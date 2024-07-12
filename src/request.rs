@@ -4,6 +4,7 @@ use tokio::net::TcpStream;
 
 const MAX_BODY_SIZE: usize = 10000;
 const MAX_NUM_HEADERS: usize = 32;
+const MAX_HEADERS_SIZE: usize = 8000;
 
 #[derive(Debug)]
 pub enum Error {
@@ -66,8 +67,9 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
     }
 }
 
+///
 /// This function attempts to parse HTTP request from the provided buffer.
-/// It processes the request line and headers. If the parsing is complete,
+/// It processes the request line and **headers**. If the parsing is complete,
 /// it returns the request and the length of the parsed data.
 ///
 /// # Brief
@@ -129,14 +131,14 @@ fn parse_request(buffer: &[u8]) -> Result<Option<(http::Request<Vec<u8>>, usize)
 /// 
 /// # Error
 /// - `Error::ConnectionError`: If there was an error reading from the TCP stream.
-/// - `Error::IncompleteResponse`: If the stream is closed before a complete request is received.
-/// - `Error::MalformadResponse`: If the request received is not a valid HTTP according to the `parse_request`
+/// - `Error::IncompleteRequest`: If the stream is closed before a complete request is received.
+/// - `Error::MalformadRequest`: If the request received is not a valid HTTP according to the `parse_request`
 ///
 async fn read_header(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error> {
     // Try reading the headers from the request. We may not receive all the headers in one shot
     // (e.g. we might receive the first few bytes of a request, and then the rest follows later).
     // Try parsing repeatedly until we read a valid HTTP request.
-    let mut request_buffer = [0_u8; MAX_BODY_SIZE];
+    let mut request_buffer = [0_u8; MAX_HEADERS_SIZE];
     let mut bytes_read = 0;
 
     loop {
@@ -199,6 +201,10 @@ async fn read_body(
 ) -> Result<(), Error> {
     // Keep reading data until we read the full body length, or until we hit an error.
     while request.body().len() < content_length {
+        // content_length - bytes_read < body.len() < content_length : Error::ContentLengthMismatch
+        // content_length - bytes_read >= body().len() & body.len() < content_length : continue to extend
+        // (after extend) body.len() == content_length: break
+
         // Read up to 512 bytes at a time. (If the client only sent a small body, then only allocate
         // space to read that body )
         let mut buffer = vec![0_u8; min(512, content_length)];
@@ -207,7 +213,7 @@ async fn read_body(
             .await
             .or_else(|err| Err(Error::ConnectionError(err)))?;
 
-        // Make sure the client is still sending us bytes.
+        // Make sure the client is still sending us bytes.(too few)
         if bytes_read == 0 {
             log::debug!(
                 "Client hung up after sending a body of length {}, even though it said the current \
@@ -226,16 +232,19 @@ async fn read_body(
             );
             return Err(Error::ContentLengthMismatch);
         }
-        // Store the received by in the request body.
+        // Store the received bytes in the request body.
         request.body_mut().extend_from_slice(&buffer[..bytes_read]);
-    }
+    } 
     // get content fulled body length
     Ok(())
 }
 
 /// 
+/// This function first reads the HTTP request headers using the `read_header` function.
+/// 
 /// # Brief
 /// Reads an HTTP request from a TCP stream, including headers and optional body.
+/// It will throw `Error::RequestBodyTooLarge` awary, when it receive too much content.
 ///
 /// # Param
 /// - `stream`: A mutable reference to a `TcpStream` from which the HTTP request will be read.
@@ -250,8 +259,9 @@ async fn read_body(
 /// # Error
 /// - `Error::ConnectionError`: if there is an error reading from the TCP stream.
 /// - `Error::ContentLengthMismatch`: If the server closes the connection before the entire body(as specifie by `Content-Length`) is read.(from read_header())
-/// - `Error::IncompleteResponse`: If the stream is closed before a compelte response is received. (from read_body())
-/// - `Error::MalformadResponse`: If the response received is not valid HTTP response according to the `parse_response`(from read_body())
+/// - `Error::MalformadRequest`: If the request received is not valid HTTP request according to the `parse_request`(from read_header())
+/// - `Error::IncompleteRequest`: If the stream is closed before a compelte request is received. (from read_body())
+/// 
 pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Vec<u8>>, Error> {
     // Read headers
     let mut request = read_header(stream).await?;
@@ -266,8 +276,9 @@ pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Ve
     Ok(request)
 }
 
+///
 /// This asynchronous function takes an `http::Request` object and writes its formatted.
-/// components to the provided TCP stream. It writes the responsel, headers, and body(is present)
+/// components to the provided TCP stream. It writes the request, headers, and body(is present)
 /// to the stream.
 /// 
 /// # Brief 
@@ -287,7 +298,7 @@ pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Ve
 /// - `std::io::Error`: Indicates that an I/O error occurred while writing to the stream.
 /// 
 pub async fn write_to_stream(
-    request: http::Request<Vec<u8>>,
+    request: &http::Request<Vec<u8>>,
     stream: &mut TcpStream,
 ) -> Result<(), std::io::Error> {
     stream
@@ -329,15 +340,22 @@ pub fn format_request_line(request: &http::Request<Vec<u8>>) -> String {
     )
 }
 
+/// 
 /// This function appends to a header value (adding a new header if header is not already 
 /// present). This is used to add the client's IP address to the end of the X-forwarded-For
 /// list, or to add a new X-forwards-For header if one is not already present.
 /// 
 /// # Brief
+///  Modifies or creates an HTTP header in the provided request.
 /// 
 /// # Param
+/// - `request`: A mutable reference to an `http::Request<Vec<u8>>` object to modify.
+/// - `name`: The name of the header to modify or crate.
+/// - `extend_value`: The value to append or set for t he specified header.
 /// 
 /// # Return
+/// Nothing
+/// 
 pub fn extend_header_value(request: &mut http::Request<Vec<u8>>, name: &'static str, extend_value: &str) {
     let new_value = match request.headers().get(name) {
         Some(existing_value) => {

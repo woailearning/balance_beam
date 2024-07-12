@@ -1,4 +1,3 @@
-use http::request;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -17,11 +16,11 @@ pub enum Error {
     /// The Content-Length header is present, but does not contain a valid numeric value
     InvalidContentLength,
 
-    /// The request body is bigger than MAX_BODY_SIZE
-    ResponseBodyTooLarge,
-
     /// The Content-Length header does not match the size of the request body that was sent
     ContentLengthMismatch,
+
+    /// The request body is bigger than MAX_BODY_SIZE
+    ResponseBodyTooLarge,
 
     /// Encounter an I/O error when reading/writing a TcpStream
     ConnectionError(std::io::Error),
@@ -39,7 +38,7 @@ pub enum Error {
 /// - `response`: A reference to an `http::Response<Vec<u8>>` from which the `Content-Length` header will be retrieved.
 ///
 /// # Return
-/// - `Result<Option<usize>, Error>`: 
+/// - `Result<Option<usize>, Error>`:
 /// - `Ok(Some(usize))`: if the `Content-Length` is present and successfully parsed as a `usize`.
 /// - `Ok(None)`: if the `Content-Length` header is not present.
 /// - `Err(Error)`: if the `Content-Length` header is present but is not a valid integer.
@@ -184,9 +183,15 @@ async fn read_body(
     stream: &mut TcpStream,
     response: &mut http::Response<Vec<u8>>,
 ) -> Result<(), Error> {
+    // The response may or may not supply a Content-Length header. If it provides the header, then
+    // we want to read that number of bytes, if it does not, we want to keep reading bytes until
+    // the connection is closed.
     let content_length = get_content_length(response)?;
 
     while content_length.is_none() || response.body().len() < content_length.unwrap() {
+        // content_length is None
+        // content_length is Some | body.len() < content_length
+
         let mut buffer = [0_u8; 512];
         let bytes_read = stream
             .read(&mut buffer)
@@ -199,18 +204,18 @@ async fn read_body(
                 // We've reached the end of the response
                 break;
             } else {
-                // content-Length was set, but the server hung up before we manageed to read
+                // content-Length was set, but the server hung up before we managed to read
                 // that number of bytes
                 return Err(Error::ContentLengthMismatch);
             }
         }
         // Make sure server doesn't send move bytes than it promised to send
         if content_length.is_some() && response.body().len() + bytes_read > content_length.unwrap() {
-            return Err(Error::ContentLengthMismatch)
+            return Err(Error::ContentLengthMismatch);
         }
         // Make sure server doesn't send more bytes than we allow
         if response.body().len() + bytes_read > MAX_BODY_SIZE {
-            return Err(Error::ResponseBodyTooLarge)
+            return Err(Error::ResponseBodyTooLarge);
         }
         // Append received bytes to the response body
         response.body_mut().extend_from_slice(&buffer[..bytes_read])
@@ -219,7 +224,11 @@ async fn read_body(
 }
 
 ///
+/// This function first reads the HTTP response headers using the `read_header` function.
+/// Depending on the request method and status code, it may also read the response body using.
+///
 /// # Brief
+/// Reads an HTTP response from a TCP stream, including headers and body.
 ///
 /// # Param
 /// - `stream`: A mutable reference to a `TcpStream` from which the HTTP response body will be read.
@@ -227,9 +236,10 @@ async fn read_body(
 ///
 /// # Return
 /// Return a `Result`:
+/// - `Ok(http::Response<Vec<u8>>)`: on success, containing the complete HTTP response with headers and body (if applicable)
+/// - `Err(Error)`: if there is an error during the read process.
 ///
 /// # Error
-///
 /// - `Error::ConnectionError`: if there is an error reading from the TCP stream.
 /// - `Error::ContentLengthMismatch`: If the server closes the connection before the entire body(as specifie by `Content-Length`) is read.(from read_header)
 /// - `Error::IncompleteResponse`: If the stream is closed before a compelte response is received. (from read_body)
@@ -251,11 +261,11 @@ pub async fn read_from_stream(
     Ok(response)
 }
 
-/// 
+///
 /// This asynchronous function takes an `http::Response` object and writes its formatted
 /// components to the provided TCP stream. It writes the response, headers, and body(is present)
 /// to the stream.
-/// 
+///
 /// # Brief
 /// Writes an HTTP response to a TCP stream
 ///
@@ -267,11 +277,11 @@ pub async fn read_from_stream(
 /// Return a `Result<(), std::io::Error>`:
 /// - Ok(()): If the write operation was successful.
 /// - Err(std::io::Error): If an I/O error occurred during the write operation.
-/// 
+///
 /// # Error
 /// - `std::io::Error`: Indicates that an I/O error occurred while writing to the stream.
 ///
-async fn write_to_stream(
+pub async fn write_to_stream(
     response: &http::Response<Vec<u8>>,
     stream: &mut TcpStream,
 ) -> Result<(), std::io::Error> {
@@ -332,7 +342,7 @@ pub fn format_response_line(response: &http::Response<Vec<u8>>) -> String {
 /// # Return
 /// An 'http::Response<Vec<u8>>' containing the formatted HTTP error response.
 ///
-pub async fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>> {
+pub fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>> {
     let body = format!(
         "HTTP {}, {}",
         status.as_u16(),
