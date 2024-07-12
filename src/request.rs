@@ -298,7 +298,7 @@ pub async fn read_from_stream(stream: &mut TcpStream) -> Result<http::Request<Ve
 /// - `std::io::Error`: Indicates that an I/O error occurred while writing to the stream.
 /// 
 pub async fn write_to_stream(
-    request: http::Request<Vec<u8>>,
+    request: &http::Request<Vec<u8>>,
     stream: &mut TcpStream,
 ) -> Result<(), std::io::Error> {
     stream

@@ -210,8 +210,7 @@ async fn read_body(
             }
         }
         // Make sure server doesn't send move bytes than it promised to send
-        if content_length.is_some() && response.body().len() + bytes_read > content_length.unwrap()
-        {
+        if content_length.is_some() && response.body().len() + bytes_read > content_length.unwrap() {
             return Err(Error::ContentLengthMismatch);
         }
         // Make sure server doesn't send more bytes than we allow
