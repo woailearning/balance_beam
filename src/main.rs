@@ -9,6 +9,7 @@ use tokio::{
 
 mod response;
 mod request;
+mod proxy;
 
 // #[derive(Parser, Debug)]
 // #[command(about = "Fun with load balancing")]

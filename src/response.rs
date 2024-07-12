@@ -1,4 +1,3 @@
-use http::request;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -17,11 +16,11 @@ pub enum Error {
     /// The Content-Length header is present, but does not contain a valid numeric value
     InvalidContentLength,
 
-    /// The request body is bigger than MAX_BODY_SIZE
-    ResponseBodyTooLarge,
-
     /// The Content-Length header does not match the size of the request body that was sent
     ContentLengthMismatch,
+
+    /// The request body is bigger than MAX_BODY_SIZE
+    ResponseBodyTooLarge,
 
     /// Encounter an I/O error when reading/writing a TcpStream
     ConnectionError(std::io::Error),
@@ -219,7 +218,11 @@ async fn read_body(
 }
 
 ///
+/// This function first reads the HTTP response headers using the `read_header` function.
+/// Depending on the request method and status code, it may also read the response body using.
+/// 
 /// # Brief
+/// Reads an HTTP response from a TCP stream, including headers and body.
 ///
 /// # Param
 /// - `stream`: A mutable reference to a `TcpStream` from which the HTTP response body will be read.
@@ -227,9 +230,10 @@ async fn read_body(
 ///
 /// # Return
 /// Return a `Result`:
+/// - `Ok(http::Response<Vec<u8>>)`: on success, containing the complete HTTP response with headers and body (if applicable)
+/// - `Err(Error)`: if there is an error during the read process.
 ///
 /// # Error
-///
 /// - `Error::ConnectionError`: if there is an error reading from the TCP stream.
 /// - `Error::ContentLengthMismatch`: If the server closes the connection before the entire body(as specifie by `Content-Length`) is read.(from read_header)
 /// - `Error::IncompleteResponse`: If the stream is closed before a compelte response is received. (from read_body)
@@ -271,7 +275,7 @@ pub async fn read_from_stream(
 /// # Error
 /// - `std::io::Error`: Indicates that an I/O error occurred while writing to the stream.
 ///
-async fn write_to_stream(
+pub async fn write_to_stream(
     response: &http::Response<Vec<u8>>,
     stream: &mut TcpStream,
 ) -> Result<(), std::io::Error> {
@@ -332,7 +336,7 @@ pub fn format_response_line(response: &http::Response<Vec<u8>>) -> String {
 /// # Return
 /// An 'http::Response<Vec<u8>>' containing the formatted HTTP error response.
 ///
-pub async fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>> {
+pub fn make_http_error(status: http::StatusCode) -> http::Response<Vec<u8>> {
     let body = format!(
         "HTTP {}, {}",
         status.as_u16(),
