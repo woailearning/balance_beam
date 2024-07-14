@@ -38,7 +38,7 @@ pub enum Error {
 /// - `response`: A reference to an `http::Response<Vec<u8>>` from which the `Content-Length` header will be retrieved.
 ///
 /// # Return
-/// - `Result<Option<usize>, Error>`:
+/// Return a `Result<Option<usize>, Error>`:
 /// - `Ok(Some(usize))`: if the `Content-Length` is present and successfully parsed as a `usize`.
 /// - `Ok(None)`: if the `Content-Length` header is not present.
 /// - `Err(Error)`: if the `Content-Length` header is present but is not a valid integer.
@@ -235,7 +235,7 @@ async fn read_body(
 /// - `request_method`: A mutable reference to an `http::Response<Vec<u8>>` which will hold the response body.
 ///
 /// # Return
-/// Return a `Result`:
+/// Return a `Result<http::Response<Vec<u8>>, Error>`:
 /// - `Ok(http::Response<Vec<u8>>)`: on success, containing the complete HTTP response with headers and body (if applicable)
 /// - `Err(Error)`: if there is an error during the read process.
 ///

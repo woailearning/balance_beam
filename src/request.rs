@@ -42,7 +42,7 @@ pub enum Error {
 /// - `request`: A reference to an `http::Request<Vec<u8>>` from which the `Content-Length` header will be retrieved.
 ///
 /// # Return
-/// - `Result<Option<usize>, Error>`: 
+/// Return a `Result<Option<usize>, Error>`: 
 /// - `Ok(Some(usize))` if the `Content-Length` is present and successfully parsed as a `usize`. 
 /// - `Ok(None)` if the `Content-Length` header is not present.
 /// - `Err(Error)` if the header value cannot be parsed as a `usize`.
@@ -250,7 +250,7 @@ async fn read_body(
 /// - `stream`: A mutable reference to a `TcpStream` from which the HTTP request will be read.
 ///
 /// # Return
-/// Returns `Result<Vec<u8>, Error>`
+/// Return a `Result<http::Request<Vec<u8>>, Error>`
 /// on success, contains on `http::Request` which the request headers and body.
 /// on failure, it returns an `Error` indicating what went wrong during the read process.
 /// - `http::Request<Vec<u8>>`: Retrieve the request from read_header(), then pass it as a parameter to read_body()

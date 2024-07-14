@@ -10,8 +10,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
     sync::{Mutex, RwLock},
     time::sleep,
 };
@@ -157,12 +156,26 @@ pub(crate) async fn active_health_check(state: &ProxyState) {
 }
 
 ///
-///
+/// This function asynchronously connects to an upstream server chosen randomly 
+/// from a list of live upstream addresses stored in the ProxyState, If connection 
+/// to the selected upstream fails, it logs the error, removes the failed upstream 
+/// from the list of live address, and retries with another randomly chosen 
+/// upstream until a successful connection is established.
+/// 
 /// # Brief
+/// Asynchronously connects to a random live upstream server from ProxyState.
 ///
 /// # Param
+/// - `state`: A reference to ProxyState, which holds information about live upstream addresses.
 ///
 /// # Return
+/// Return a `Result<TcpStream, std::io::Error>`:
+/// -`Ok(TcpStream)`: Returns a Result containing a TcpStream if the connection is successful, 
+/// -`Err(std::io::Error)`: or a std::io::Error if all upstream servers fail to connect.
+/// 
+/// # Error
+/// -`std::io::Error`: Indicates a failure to connect to the upstream server. This error
+///   occurs if all attempted upstream connections fail.
 ///
 async fn connect_to_upstream(state: &ProxyState) -> Result<TcpStream, std::io::Error> {
     let mut rng = rand::rngs::StdRng::from_entropy();
@@ -193,12 +206,24 @@ async fn connect_to_upstream(state: &ProxyState) -> Result<TcpStream, std::io::E
 }
 
 ///
+/// This function sends on HTTP rsponse to a Client over TCP connection, logging the client's IP
+/// address and the response details. It handles writing the response to the client 
+/// connection asynchronously
+/// 
 /// # Brief
-///
+/// Sends on HTTP response to a client over a TCP connection.
+/// 
 /// # Param
-///
+/// - `client_conn`: A mutable reference to a TcpStream representing the client connection.
+/// - `response`: A reference to an http::Response<Vec<u8>> containing the respnose to send.
+/// 
 /// # Return
-///
+/// Nothing
+/// 
+/// # Error
+/// - `std::io::Error`: Indicates a failure while sending the HTTP response to the client 
+///   over the TCP connection.
+/// 
 async fn send_response(client_conn: &mut TcpStream, response: &http::Response<Vec<u8>>) {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     log::info!(
@@ -218,6 +243,7 @@ async fn send_response(client_conn: &mut TcpStream, response: &http::Response<Ve
 /// is sent back to the client and an error is retuned. Otherwise, the function returns Ok(()).
 ///
 /// # Brief
+/// Checks and enforces rate limiting for clientrequests based on IP address.
 ///
 /// # Param
 /// - `state`: A reference to the 'ProxyState' which contains the rate limiting counter and
@@ -225,14 +251,12 @@ async fn send_response(client_conn: &mut TcpStream, response: &http::Response<Ve
 /// - `client_conn`: A mutable reference to the'TcpStream' representing the client connection.
 ///
 /// # Return
-/// - `Result<(), std::io::Error>`:
-/// Return `()`, if the client is within the allowed rate,
-/// Return `std::io::Error`, otherwises returns an error indicating that rate limiting has been enforced.     
-///
-/// - `Ok(())`:
-/// - `Err(std::io::Error)`:
+/// Return a `Result<(), std::io::Error>`:
+/// - `Ok(())`, if the client is within the allowed rate,
+/// - `Err(std::io::Error`, otherwises returns an error indicating that rate limiting has been enforced.     
 ///
 /// # Error
+/// - `std::io::Error` : Indicates an issue while sending the HTTP error response to the client.
 ///
 async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(), std::io::Error> {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
@@ -260,6 +284,7 @@ async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(
 ///
 /// # Return
 ///
+/// 
 async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     log::info!("Connection received from {}", client_ip);
