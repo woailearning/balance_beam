@@ -155,8 +155,6 @@ async fn connect_to_upstream(state: &ProxyState) -> Result<TcpStream, std::io::E
     }
 }
 
-async fn handle_connection(client_conn: TcpStream, state: &ProxyState) {
-}
 
 ///
 /// # Brief
@@ -191,8 +189,14 @@ async fn send_response(client_conn: &mut TcpStream, response: &http::Response<Ve
 /// - `client_conn`: A mutable reference to the'TcpStream' representing the client connection.
 /// 
 /// # Return
-/// - `Result<(), std::io::Error>`: Return `Ok(())`, if the client is within the allowed rate,
-/// otherwises returns an error indicating that rate limiting has been enforced.     
+/// - `Result<(), std::io::Error>`: 
+/// Return `()`, if the client is within the allowed rate,
+/// Return `std::io::Error`, otherwises returns an error indicating that rate limiting has been enforced.     
+/// 
+/// - `Ok(())`: 
+/// - `Err(std::io::Error)`: 
+/// 
+/// # Error
 /// 
 async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(), std::io::Error> {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
@@ -213,18 +217,23 @@ async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(
     Ok(())
 }
 
+///
 /// This asynchronous function continuously clears the rate limiting counter at a specified
 /// interval. It runs an infinite loop that sleeps for the given interval and then clears 
 /// the rate limiting counter.
 /// 
 /// # Brief
+/// Asynchronous clears the rate limiting counter at a specified interval.
 ///
 /// # Param
 /// - `state`: A reference to the `ProxyState` which contains the rates limiting counter.
 /// - `clear_interval`: The interval in seconds at which the rate limiting counter should be cleared.
-/// 
+///
 /// # Return
+/// Nothing
 /// 
+/// # Error
+/// Nothing
 async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) {
     loop {
         sleep(Duration::from_secs(clear_interval)).await;
@@ -232,4 +241,18 @@ async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) 
         let mut rate_limiting_counter = state.rate_limiting_counter.clone().lock_owned().await;
         rate_limiting_counter.clear();
     }
+}
+
+/// 
+/// # Brief
+/// 
+/// # Param
+/// 
+/// # Return
+/// 
+async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
+    let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
+    log::info!("Connection received from {}", client_ip);
+
+    // Open a connection to a random destination server.
 }
