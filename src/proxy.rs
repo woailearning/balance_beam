@@ -1,16 +1,20 @@
 use crate::request;
 use crate::response;
 
-use std::{collections::HashMap, sync::Arc, time::Duration, io::{Error, ErrorKind}};
 use rand::Rng;
 use rand::SeedableRng;
+use std::{
+    collections::HashMap,
+    io::{Error, ErrorKind},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::{Mutex, RwLock},
     time::sleep,
-    io::{AsyncReadExt, AsyncWriteExt},
 };
-
 
 #[derive(Clone)]
 pub(crate) struct ProxyState {
@@ -30,33 +34,65 @@ pub(crate) struct ProxyState {
     live_upstream_addresses: Arc<RwLock<Vec<String>>>,
 
     /// Rate limiting counter
+    ///
+    /// This structure maps IP addresses (as strings) to the number of requests made within
+    /// a specific timeframe, used primarily to enforce rate limits.
+    ///
+    /// It utilizes a mutex for thread-safe concurrent access from multiple asynchronous tasks.
+    /// Each modification to the counter acquires a lock,
     rate_limiting_counter: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 ///
+/// This asynchronous function continuously clears the rate limiting counter at a specified
+/// interval. It runs an infinite loop that sleeps for the given interval and then clears
+/// the rate limiting counter.
+///
+/// # Brief
+/// Asynchronous clears the rate limiting counter at a specified interval.
+///
+/// # Param
+/// - `state`: A reference to the `ProxyState` which contains the rates limiting counter.
+/// - `clear_interval`: The interval in seconds at which the rate limiting counter should be cleared.
+///
+/// # Return
+/// Nothing
+///
+/// # Error
+/// Nothing
+async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) {
+    loop {
+        sleep(Duration::from_secs(clear_interval)).await;
+        // Clean up counter evert minute
+        let mut rate_limiting_counter = state.rate_limiting_counter.clone().lock_owned().await;
+        rate_limiting_counter.clear();
+    }
+}
+
+///
 /// Performs active health checks on upstream servers in a loop.
-/// Clears the list of live upstream dddresses and checks each upstream server
+/// Clears the list of live upstream addresses and checks each upstream servers
 /// by sending an HTTP GET request. Upstreams that return non-200 status codes
 /// are marked as failed, while those returning HTTP 200 are considered healthy
 /// and added back to the rotation of live upstream servers.
-/// 
+///
 /// # Brief
 /// Continuously performs active health checks on upstream servers.
-/// 
+///
 /// # Param
 /// -`state`: A reference to `ProxyState` containing the current proxy configuration and state.
-/// 
+///
 /// # Return
-/// Null
-/// 
+/// Nothing, But it it rewrite the value of ProxyState.live_upstream_
+///
+/// # Error
 /// 
 pub(crate) async fn active_health_check(state: &ProxyState) {
     loop {
-        sleep(
-            Duration::from_secs(
-                state.active_health_check_interval.try_into().unwrap(),
-            )
-        ).await;
+        sleep(Duration::from_secs(
+            state.active_health_check_interval.try_into().unwrap(),
+        ))
+        .await;
 
         let mut live_upstream_addresses = state.live_upstream_addresses.write().await;
         live_upstream_addresses.clear();
@@ -70,13 +106,14 @@ pub(crate) async fn active_health_check(state: &ProxyState) {
                 .uri(&state.active_health_check_path)
                 .header("Host", upstream_ip)
                 .body(Vec::<u8>::new())
-            .unwrap();
+                .unwrap();
 
             // Open a connection to a destination server
             match TcpStream::connect(upstream_ip).await {
                 Ok(mut conn) => {
                     // Write to stream and read from stream
-                    if let Err(error) = request::write_to_stream(&request, &mut conn).await { // Request::Error
+                    if let Err(error) = request::write_to_stream(&request, &mut conn).await {
+                        // std::io::Error
                         log::error!(
                             "Failed to send request to upstream {}: {}",
                             upstream_ip,
@@ -87,7 +124,8 @@ pub(crate) async fn active_health_check(state: &ProxyState) {
 
                     let response = match response::read_from_stream(&mut conn, &request.method()).await {
                         Ok(response) => response,
-                        Err(error) => { // Response::Error
+                        Err(error) => {
+                            // Response::Error
                             log::error!("Error reading response from server: {:?}", error);
                             return;
                         }
@@ -97,7 +135,7 @@ pub(crate) async fn active_health_check(state: &ProxyState) {
                     match response.status().as_u16() {
                         200 => {
                             live_upstream_addresses.push(upstream_ip.clone());
-                        },
+                        }
                         status @ _ => {
                             log::error!(
                                 "upstream server {} is not working: {}",
@@ -107,8 +145,9 @@ pub(crate) async fn active_health_check(state: &ProxyState) {
                             return;
                         }
                     }
-                },
-                Err(err) => { // std::io::Error
+                }
+                Err(err) => {
+                    // std::io::Error
                     log::error!("Failed to connect to upstream {}: {}", upstream_ip, err);
                     return;
                 }
@@ -117,15 +156,14 @@ pub(crate) async fn active_health_check(state: &ProxyState) {
     }
 }
 
-
-/// 
-/// 
+///
+///
 /// # Brief
 ///
 /// # Param
 ///
 /// # Return
-/// 
+///
 async fn connect_to_upstream(state: &ProxyState) -> Result<TcpStream, std::io::Error> {
     let mut rng = rand::rngs::StdRng::from_entropy();
 
@@ -149,19 +187,18 @@ async fn connect_to_upstream(state: &ProxyState) -> Result<TcpStream, std::io::E
                     log::error!("All upstreams are dead");
                     return Err(Error::new(ErrorKind::Other, "All upstreams are dead"));
                 }
-            },
+            }
         }
     }
 }
 
-
 ///
 /// # Brief
-/// 
+///
 /// # Param
-/// 
+///
 /// # Return
-/// 
+///
 async fn send_response(client_conn: &mut TcpStream, response: &http::Response<Vec<u8>>) {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     log::info!(
@@ -179,24 +216,24 @@ async fn send_response(client_conn: &mut TcpStream, response: &http::Response<Ve
 /// This asynchronous function checks if the rate limit for a client IP has been exceded.
 /// If he client exceded the maximum allowed requests per minute, an HTTP error response
 /// is sent back to the client and an error is retuned. Otherwise, the function returns Ok(()).
-/// 
+///
 /// # Brief
-/// 
+///
 /// # Param
-/// - `state`: A reference to the 'ProxyState' which contains the rate limiting counter and 
+/// - `state`: A reference to the 'ProxyState' which contains the rate limiting counter and
 /// the maxium allowed request per minutes.
 /// - `client_conn`: A mutable reference to the'TcpStream' representing the client connection.
-/// 
+///
 /// # Return
-/// - `Result<(), std::io::Error>`: 
+/// - `Result<(), std::io::Error>`:
 /// Return `()`, if the client is within the allowed rate,
 /// Return `std::io::Error`, otherwises returns an error indicating that rate limiting has been enforced.     
-/// 
-/// - `Ok(())`: 
-/// - `Err(std::io::Error)`: 
-/// 
+///
+/// - `Ok(())`:
+/// - `Err(std::io::Error)`:
+///
 /// # Error
-/// 
+///
 async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(), std::io::Error> {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     let mut rate_limiting_counter = state.rate_limiting_counter.clone().lock_owned().await;
@@ -217,38 +254,12 @@ async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(
 }
 
 ///
-/// This asynchronous function continuously clears the rate limiting counter at a specified
-/// interval. It runs an infinite loop that sleeps for the given interval and then clears 
-/// the rate limiting counter.
-/// 
 /// # Brief
-/// Asynchronous clears the rate limiting counter at a specified interval.
 ///
 /// # Param
-/// - `state`: A reference to the `ProxyState` which contains the rates limiting counter.
-/// - `clear_interval`: The interval in seconds at which the rate limiting counter should be cleared.
 ///
 /// # Return
-/// Nothing
-/// 
-/// # Error
-/// Nothing
-async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) {
-    loop {
-        sleep(Duration::from_secs(clear_interval)).await;
-        // Clean up counter evert minute
-        let mut rate_limiting_counter = state.rate_limiting_counter.clone().lock_owned().await;
-        rate_limiting_counter.clear();
-    }
-}
-
-/// 
-/// # Brief
-/// 
-/// # Param
-/// 
-/// # Return
-/// 
+///
 async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     log::info!("Connection received from {}", client_ip);
@@ -260,11 +271,11 @@ async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
             let response = response::make_http_error(http::StatusCode::BAD_GATEWAY);
             send_response(&mut client_conn, &response).await;
             return;
-        },
+        }
     };
     let upstream_ip = upstream_conn.peer_addr().unwrap().ip().to_string();
 
-    // The client may now send us one or more requests. Keep trying to read requests until 
+    // The client may now send us one or more requests. Keep trying to read requests until
     // the client hangs up or we get an error.
     loop {
         // read a request from the client.
@@ -273,14 +284,14 @@ async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
             Err(request::Error::IncompleteRequest(0)) => {
                 log::debug!("Client finished sending requests. Shutting down connection");
                 return;
-            },
+            }
             Err(request::Error::ConnectionError(io_err)) => {
                 // handle I/O error in reading from the client
                 log::info!("Error reading request from client stream {}", io_err);
                 return;
-            },
+            }
             Err(error) => {
-                log::debug!( "Error parsing request: {:?}", error);
+                log::debug!("Error parsing request: {:?}", error);
                 let response = response::make_http_error(match error {
                     request::Error::IncompleteRequest(_)
                     | request::Error::MalformaedRequest(_)
@@ -293,7 +304,7 @@ async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
                 });
                 send_response(&mut client_conn, &response).await;
                 continue;
-            },
+            }
         };
         log::info!(
             "{} -> {}: {}",
@@ -328,14 +339,15 @@ async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
         }
         log::debug!("Forwarded request to server");
 
-        let response = match response::read_from_stream(&mut upstream_conn, request.method()).await {
+        let response = match response::read_from_stream(&mut upstream_conn, request.method()).await
+        {
             Ok(response) => response,
             Err(error) => {
                 log::error!("Error reading response from server: {:?}", error);
                 let response = response::make_http_error(http::StatusCode::BAD_GATEWAY);
                 send_response(&mut client_conn, &response).await;
                 return;
-            },
+            }
         };
 
         // Forward the response to the client.
