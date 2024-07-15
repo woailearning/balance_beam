@@ -14,10 +14,10 @@ pub enum Error {
     IncompleteRequest(usize),
 
     /// Client sent on invaild HTTP request. httparse::Error contains more details
-    MalformaedRequest(httparse::Error),
+    MalformedRequest(httparse::Error),
 
     /// The Content-Length header is present, but does not contain a valid numeric value
-    InvaildContentLength,
+    InvalidContentLength,
 
     /// The Content-Length header does is not match the size of the request body that was sent
     ContentLengthMismatch,
@@ -57,9 +57,9 @@ fn get_content_length(request: &http::Request<Vec<u8>>) -> Result<Option<usize>,
         Ok(Some(
             header_value
                 .to_str()
-                .or(Err(Error::InvaildContentLength))?
+                .or(Err(Error::InvalidContentLength))?
                 .parse::<usize>()
-                .or(Err(Error::InvaildContentLength))?,
+                .or(Err(Error::InvalidContentLength))?,
         ))
     } else {
         // If it doesn't exist, return None.
@@ -93,7 +93,7 @@ fn parse_request(buffer: &[u8]) -> Result<Option<(http::Request<Vec<u8>>, usize)
 
     let res = req
         .parse(buffer)
-        .or_else(|err| Err(Error::MalformaedRequest(err)))?;
+        .or_else(|err| Err(Error::MalformedRequest(err)))?;
 
     if let httparse::Status::Complete(len) = res {
         let mut request = http::Request::builder()

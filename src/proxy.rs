@@ -1,5 +1,6 @@
 use crate::request;
 use crate::response;
+ use crate::CmdOptions;
 
 use rand::Rng;
 use rand::SeedableRng;
@@ -16,7 +17,7 @@ use tokio::{
 };
 
 #[derive(Clone)]
-pub(crate) struct ProxyState {
+pub struct ProxyState {
     /// How franquly we check whether upstream server are alive
     active_health_check_interval: usize,
 
@@ -42,6 +43,20 @@ pub(crate) struct ProxyState {
     rate_limiting_counter: Arc<Mutex<HashMap<String, usize>>>,
 }
 
+impl ProxyState {
+    pub fn new(options: CmdOptions) -> Self {
+        ProxyState {
+            live_upstream_addresses: Arc::new(RwLock::new(options.upstream.clone())),
+            upstream_addresses: options.upstream,
+            active_health_check_interval: options.active_health_check_interval,
+            active_health_check_path: options.active_health_check_path,
+            max_requests_per_minutes: options.max_requests_per_minute,
+            rate_limiting_counter: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+}
+
+
 ///
 /// This asynchronous function continuously clears the rate limiting counter at a specified
 /// interval. It runs an infinite loop that sleeps for the given interval and then clears
@@ -59,7 +74,7 @@ pub(crate) struct ProxyState {
 ///
 /// # Error
 /// Nothing
-async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) {
+pub(crate) async fn rate_limiting_counter_clearer(state: &ProxyState, clear_interval: u64) {
     loop {
         sleep(Duration::from_secs(clear_interval)).await;
         // Clean up counter evert minute
@@ -285,7 +300,7 @@ async fn check_rate(state: &ProxyState, client_conn: &mut TcpStream) -> Result<(
 /// # Return
 ///
 /// 
-async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
+pub(crate) async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
     let client_ip = client_conn.peer_addr().unwrap().ip().to_string();
     log::info!("Connection received from {}", client_ip);
 
@@ -319,8 +334,8 @@ async fn handle_connection(mut client_conn: TcpStream, state: &ProxyState) {
                 log::debug!("Error parsing request: {:?}", error);
                 let response = response::make_http_error(match error {
                     request::Error::IncompleteRequest(_)
-                    | request::Error::MalformaedRequest(_)
-                    | request::Error::InvaildContentLength
+                    | request::Error::MalformedRequest(_)
+                    | request::Error::InvalidContentLength
                     | request::Error::ContentLengthMismatch => http::StatusCode::BAD_REQUEST,
 
                     request::Error::RequestBodyTooLarge => http::StatusCode::PAYLOAD_TOO_LARGE,

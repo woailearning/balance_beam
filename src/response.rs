@@ -55,7 +55,7 @@ fn get_content_length(response: &http::Response<Vec<u8>>) -> Result<Option<usize
                 .to_str()
                 .or(Err(Error::InvalidContentLength))?
                 .parse::<usize>()
-                .or_else(|err| Err(Error::InvalidContentLength))?,
+                .or(Err(Error::InvalidContentLength))?,
         ))
     } else {
         // If it doesn't exist, return None.
