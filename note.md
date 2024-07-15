@@ -105,3 +105,18 @@ src/request.rs
 or_else() / or()
 
 # read_headers():
+
+# read_body(respone: Response<Vec<_>>):
+响应主体长度的确定机制
+
+Content-Length 头部:
+如果 HTTP 响应头部包含 Content-Length 头部，这个头部指示了主体的确切字节长度。
+函数通过 get_content_length(response) 获取这个值，并依据它读取响应主体的字节数。
+
+分块传输编码（Chunked Transfer Encoding）:
+如果 Transfer-Encoding: chunked 头部存在，表示响应主体是以分块编码传输的。每个分块都有自己的长度标识，主体由多个分块组成，最后一个分块长度为 0 表示结束。
+在这种情况下，需要特别处理分块编码，但在你的代码中没有处理这种情况。
+
+连接关闭:
+如果既没有 Content-Length 头部，也没有 Transfer-Encoding: chunked 头部，服务器通过关闭连接来指示响应主体的结束。
+当服务器发送完主体内容后，它会关闭 TCP 连接。客户端通过检测读取到的字节数为 0 来判断连接是否关闭，并停止读取。
